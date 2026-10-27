@@ -47,7 +47,7 @@ def test_rbac_blocks_employee_from_admin_routes(client, employee):
 
 
 def test_google_sso_disabled_without_config(client):
-    assert client.get("/api/auth/providers").json() == {"google": False}
+    assert client.get("/api/auth/providers").json() == {"google": False, "demo_mode": False, "daily_budget_usd": 0.0}
     assert client.get("/api/auth/google/login", follow_redirects=False).status_code == 404
 
 

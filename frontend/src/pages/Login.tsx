@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { api, ApiError, post } from '../lib/api'
+import { api, API_BASE, ApiError, post } from '../lib/api'
 import type { TokenPair } from '../lib/types'
 import { useAuth } from '../store/auth'
 import { Button, ErrorBanner } from '../components/ui'
@@ -23,7 +23,7 @@ export function Login() {
   const [loading, setLoading] = useState(false)
   const providers = useQuery({
     queryKey: ['auth-providers'],
-    queryFn: () => api<{ google: boolean }>('/api/auth/providers'),
+    queryFn: () => api<{ google: boolean; demo_mode: boolean; daily_budget_usd: number }>('/api/auth/providers'),
   })
 
   if (accessToken) return <Navigate to="/chat" replace />
@@ -74,7 +74,7 @@ export function Login() {
           </Button>
           {providers.data?.google && (
             <a
-              href="/api/auth/google/login"
+              href={`${API_BASE}/api/auth/google/login`}
               className="flex w-full items-center justify-center rounded-lg px-3.5 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
             >
               Continue with Google (SSO)
@@ -95,6 +95,13 @@ export function Login() {
           </p>
         </form>
 
+        {providers.data?.demo_mode && (
+          <p className="mt-6 rounded-xl bg-indigo-50 p-4 text-sm text-indigo-900 ring-1 ring-indigo-100">
+            Public demo. AI answers come from Claude
+            {providers.data.daily_budget_usd > 0 && `, capped at $${providers.data.daily_budget_usd}/day; after that the app switches to an offline model`}
+            . The first request may take up to a minute while the free-tier server wakes up.
+          </p>
+        )}
         {mode === 'login' && (
           <div className="mt-6 rounded-xl bg-white p-4 text-sm ring-1 ring-slate-200">
             <p className="font-medium text-slate-700">Demo accounts (password: Password123!)</p>

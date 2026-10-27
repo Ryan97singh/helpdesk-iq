@@ -16,6 +16,8 @@ COPY --chown=app:app seed ./seed
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+  CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.getenv(\"PORT\", \"8000\")}/health')"
 # 2 workers per container; scale horizontally with more replicas rather than more workers.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers"]
+# PORT / WEB_CONCURRENCY are overridable by the platform (Render injects PORT). Use 1 worker when running
+# without Redis, since the in-memory cache, rate limiter and event worker are per process.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips='*'"]

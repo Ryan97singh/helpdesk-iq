@@ -1,7 +1,9 @@
 import { useAuth } from '../store/auth'
 import type { ChatEvent, TokenPair } from './types'
 
-const BASE = import.meta.env.VITE_API_URL ?? ''
+/** API origin. Empty = same origin (Vite proxy / nginx); set VITE_API_URL when the API is hosted elsewhere. */
+export const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
+const BASE = API_BASE
 
 export class ApiError extends Error {
   status: number

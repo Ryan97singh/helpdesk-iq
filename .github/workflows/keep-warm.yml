@@ -1,0 +1,17 @@
+name: Keep demo warm
+
+# Render's free tier sleeps after 15 idle minutes (~1 min cold start). Ping the API during
+# Indian working hours so reviewers don't hit a cold start. Set repo variable DEMO_API_URL to enable.
+on:
+  schedule:
+    - cron: "*/10 3-16 * * 1-6"   # every 10 min, 08:30-22:30 IST, Mon-Sat
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: vars.DEMO_API_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 "${{ vars.DEMO_API_URL }}/health"

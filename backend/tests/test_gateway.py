@@ -29,10 +29,11 @@ class ScriptedProvider(LLMProvider):
         yield result
 
 
-def gateway(*providers, records=None):
-    s = Settings(llm_max_retries=2, llm_cache_ttl_seconds=60)
+def gateway(*providers, records=None, budget=0.0, spent=0.0):
+    s = Settings(llm_max_retries=2, llm_cache_ttl_seconds=60, llm_daily_budget_usd=budget)
     return LLMGateway(list(providers), InMemoryCache(), s,
-                      recorder=(records.append if records is not None else lambda r: None), sleep=lambda _: None)
+                      recorder=(records.append if records is not None else lambda r: None), sleep=lambda _: None,
+                      spend_today=lambda: spent)
 
 
 REQ = LLMRequest(system="sys", messages=[{"role": "user", "content": "hello"}])
@@ -108,3 +109,26 @@ def test_mock_provider_structured_triage_output():
                      tier="fast", json_schema={"type": "object"})
     data = json.loads(MockProvider().complete(req).text)
     assert data["category"] == "Access" and data["priority"] == "urgent"
+
+
+def test_daily_budget_exhausted_serves_mock_and_skips_paid_provider():
+    paid = ScriptedProvider("claude")
+    gw = gateway(paid, budget=1.0, spent=1.02)
+    result, rec = gw.complete(REQ, task="chat")
+    assert paid.calls == 0 and result.provider == "mock" and rec.fallback_used
+    # degraded answers are not cached: once the budget resets, the real model answers again
+    gw._spend_today, gw._spend_checked = (lambda: 0.0), (0.0, 0.0)
+    result, _ = gw.complete(REQ, task="chat")
+    assert result.provider == "claude" and paid.calls == 1
+
+
+def test_budget_under_limit_uses_primary():
+    paid = ScriptedProvider("claude")
+    items = list(gateway(paid, budget=1.0, spent=0.4).stream(REQ, task="chat"))
+    assert items[-1].provider == "claude" and not items[-1].fallback_used
+
+
+def test_hosted_postgres_urls_get_sqlalchemy_driver():
+    assert Settings(database_url="postgres://u:p@h/db").database_url == "postgresql+psycopg://u:p@h/db"
+    assert Settings(database_url="postgresql://u:p@h/db?sslmode=require").database_url.startswith("postgresql+psycopg://")
+    assert Settings(database_url="sqlite:///x.db").database_url == "sqlite:///x.db"

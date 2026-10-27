@@ -8,14 +8,14 @@ Built to show production-style **GenAI integration** in a full-stack app: Python
 |---|---|
 | **AI integration** | Multi-provider **LLM gateway**: Claude, OpenAI and Azure OpenAI (Strategy + Factory), plus an offline Mock |
 | **Cost & performance** | Response cache (Redis), model routing (Sonnet for chat, Haiku for triage), skip the LLM when nothing relevant is retrieved, bounded history, per-call token/cost/latency accounting |
-| **Reliability** | Retries with exponential backoff + jitter on 429/5xx, **provider fallback chain**, graceful degradation |
+| **Reliability** | Retries with exponential backoff + jitter on 429/5xx, **provider fallback chain**, graceful degradation, **daily LLM budget cap** |
 | **RAG** | Paragraph-aware chunking, embeddings, **hybrid retrieval** (pgvector HNSW + keyword rerank), cited, streamed answers (SSE) |
 | **Structured output** | Ticket triage returns schema-validated JSON (category, priority, summary, reply) |
 | **Security** | JWT access/refresh, **Google OAuth 2.0 / OIDC SSO**, RBAC (employee/agent/admin), row-level access, bcrypt, rate limiting, **PII redaction** before LLM calls, prompt-injection guard, upload validation, security headers |
 | **Event-driven** | Uploads and tickets publish events; workers consume them via **Redis Streams consumer groups** (retries + dead-letter). SQS on AWS |
 | **Data** | PostgreSQL (relational + vectors), MongoDB for chat transcripts (DynamoDB on AWS), S3 for files |
 | **Observability** | JSON logs with request IDs, Prometheus metrics (HTTP + LLM tokens/cost/latency), `/health` + `/ready`, Grafana |
-| **Testing** | 29 pytest tests (gateway, auth, RAG, tickets, RBAC), Vitest unit tests, 12 Playwright E2E tests (desktop + mobile) |
+| **Testing** | 33 pytest tests (gateway, auth, RAG, tickets, RBAC), Vitest unit tests, 12 Playwright E2E tests (desktop + mobile) |
 | **DevOps** | Multi-stage Dockerfiles (non-root), docker-compose, Kubernetes (HPA, PDB, probes, Ingress), Terraform for AWS, GitHub Actions (lint, test, E2E, Trivy scan, OIDC deploy) |
 
 ## Quick start
@@ -58,7 +58,7 @@ flowchart LR
   A & W -->|/metrics| PR[Prometheus -> Grafana]
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/INFRA.md](docs/INFRA.md) and [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/INFRA.md](docs/INFRA.md), [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) and [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md) (free public demo on Vercel + Render + Neon).
 
 ## Project layout
 ```

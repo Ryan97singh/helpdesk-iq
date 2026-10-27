@@ -36,6 +36,7 @@ export function Documents() {
   const remove = useMutation({
     mutationFn: (id: number) => api(`/api/documents/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['documents'] }),
+    onError: (err) => setUploadError(err instanceof ApiError ? err.message : 'Delete failed'),
   })
 
   const onFile = (e: ChangeEvent<HTMLInputElement>) => {

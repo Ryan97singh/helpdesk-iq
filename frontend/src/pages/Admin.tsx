@@ -54,6 +54,9 @@ function Dashboard({ s }: { s: Stats }) {
         <Tile label="Cache hit rate" value={`${Math.round(llm.cache_hit_rate * 100)}%`} hint="served at zero cost" />
         <Tile label="Latency p50 / p95" value={`${llm.p50_latency_ms} / ${llm.p95_latency_ms} ms`} hint={`${llm.fallback_count} fallbacks`} />
       </div>
+      {s.gateway.daily_budget_usd > 0 && (
+        <BudgetBar spent={s.gateway.spent_today_usd} budget={s.gateway.daily_budget_usd} />
+      )}
 
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -143,5 +146,22 @@ function Bars({ data }: { data: Record<string, number> }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
+  const pct = Math.min(100, (spent / budget) * 100)
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium text-slate-900">Daily LLM budget</span>
+        <span className="text-slate-500 tabular-nums">
+          {formatCost(spent)} of {formatCost(budget)} today{pct >= 100 && ' · serving offline model'}
+        </span>
+      </div>
+      <div className="mt-2 h-2.5 rounded-full bg-slate-100" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Daily LLM budget used">
+        <div className={`h-2.5 rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+      </div>
+    </Card>
   )
 }

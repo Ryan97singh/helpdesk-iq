@@ -60,7 +60,8 @@ def me(user: CurrentUser):
 
 @router.get("/providers")
 def providers():
-    return {"google": bool(get_settings().google_client_id)}
+    s = get_settings()
+    return {"google": bool(s.google_client_id), "demo_mode": s.demo_mode, "daily_budget_usd": s.llm_daily_budget_usd}
 
 
 # --- Google OAuth 2.0 / OIDC (authorization-code flow) -------------------------------------------

@@ -15,12 +15,14 @@ import random
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from app.core.cache import Cache
 from app.core.config import Settings
 from app.core.logging import log_event
 from app.core.metrics import LLM_CACHE, LLM_COST, LLM_LATENCY, LLM_REQUESTS, LLM_TOKENS
 from app.services.llm.base import LLMProvider, LLMRequest, LLMResult, ProviderError, estimate_cost
+from app.services.llm.providers import MockProvider
 
 logger = logging.getLogger("llm.gateway")
 
@@ -49,6 +51,18 @@ def db_recorder(rec: CallRecord) -> None:
         db.commit()
 
 
+def db_spend_today() -> float:
+    from sqlalchemy import func, select
+
+    from app.db import SessionLocal
+    from app.models import LLMUsage
+
+    midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    with SessionLocal() as db:
+        return float(db.scalar(select(func.coalesce(func.sum(LLMUsage.cost_usd), 0.0))
+                               .where(LLMUsage.created_at >= midnight)) or 0.0)
+
+
 class AllProvidersFailed(Exception):
     pass
 
@@ -61,12 +75,34 @@ class LLMGateway:
         settings: Settings,
         recorder: Callable[[CallRecord], None] = db_recorder,
         sleep: Callable[[float], None] = time.sleep,
+        spend_today: Callable[[], float] = db_spend_today,
     ) -> None:
         self.providers = providers
         self.cache = cache
         self.s = settings
         self.record = recorder
         self._sleep = sleep
+        self._spend_today = spend_today
+        self._spend_checked = (0.0, 0.0)  # (monotonic time, spend) - avoid a DB query on every call
+
+    def budget_exceeded(self) -> bool:
+        """Hard daily spend cap: protects a public demo (or a runaway loop) from an unbounded bill."""
+        budget = self.s.llm_daily_budget_usd
+        if budget <= 0:
+            return False
+        checked_at, spend = self._spend_checked
+        if time.monotonic() - checked_at > 30:
+            spend = self._spend_today()
+            self._spend_checked = (time.monotonic(), spend)
+        return spend >= budget
+
+    def _chain(self) -> tuple[list[LLMProvider], bool]:
+        """Providers to try, and whether we're degraded (budget exhausted -> offline mock only)."""
+        if self.budget_exceeded():
+            logger.warning("daily LLM budget exhausted; serving offline mock")
+            mocks = [p for p in self.providers if p.name == "mock"]
+            return mocks or [MockProvider()], True
+        return self.providers, False
 
     @property
     def primary(self) -> LLMProvider:
@@ -124,16 +160,18 @@ class LLMGateway:
         LLM_CACHE.labels("miss").inc()
 
         errors = []
-        for i, provider in enumerate(self.providers):
+        chain, degraded = self._chain()
+        for i, provider in enumerate(chain):
             try:
                 result = self._with_retries(lambda p=provider: p.complete(req))
             except ProviderError as err:
                 self._failed(task, user_id, provider, req, err)
                 errors.append(str(err))
                 continue
-            if use_cache and i == 0:  # never cache a degraded fallback answer under the primary's key
+            fallback = i > 0 or degraded
+            if use_cache and not fallback:  # never cache a degraded answer under the primary's key
                 self.cache.set(key, json.dumps(result.__dict__), self.s.llm_cache_ttl_seconds)
-            return result, self._finish(task, user_id, result, started, cache_hit=False, fallback_used=i > 0)
+            return result, self._finish(task, user_id, result, started, cache_hit=False, fallback_used=fallback)
         raise AllProvidersFailed("; ".join(errors))
 
     def stream(self, req: LLMRequest, task: str, user_id: int | None = None,
@@ -151,14 +189,16 @@ class LLMGateway:
         LLM_CACHE.labels("miss").inc()
 
         errors = []
-        for i, provider in enumerate(self.providers):
+        chain, degraded = self._chain()
+        for i, provider in enumerate(chain):
             emitted = False
             try:
                 for item in provider.stream(req):
                     if isinstance(item, LLMResult):
-                        if use_cache and i == 0:
+                        fallback = i > 0 or degraded
+                        if use_cache and not fallback:
                             self.cache.set(key, json.dumps(item.__dict__), self.s.llm_cache_ttl_seconds)
-                        yield self._finish(task, user_id, item, started, cache_hit=False, fallback_used=i > 0)
+                        yield self._finish(task, user_id, item, started, cache_hit=False, fallback_used=fallback)
                         return
                     emitted = True
                     yield item

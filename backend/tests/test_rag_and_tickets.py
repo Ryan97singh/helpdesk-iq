@@ -124,3 +124,15 @@ def test_rate_limit(client, employee, monkeypatch):
     codes = [client.post("/api/tickets", headers=employee, json={"title": f"t{i}xx", "description": "desc here"}).status_code
              for i in range(3)]
     assert codes == [201, 201, 429]
+
+
+def test_demo_mode_blocks_document_deletion(client, admin, monkeypatch):
+    from app.core.config import get_settings
+
+    upload(client, admin)
+    doc_id = client.get("/api/documents", headers=admin).json()[0]["id"]
+    monkeypatch.setattr(get_settings(), "demo_mode", True)
+    r = client.delete(f"/api/documents/{doc_id}", headers=admin)
+    assert r.status_code == 403 and "demo" in r.json()["detail"]
+    monkeypatch.setattr(get_settings(), "demo_max_documents", 1)
+    assert upload(client, admin, "it_access_policy.md").status_code == 403

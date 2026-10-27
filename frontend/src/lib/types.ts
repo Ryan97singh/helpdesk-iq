@@ -98,5 +98,5 @@ export interface Stats {
   tickets: { by_category: Record<string, number>; by_status: Record<string, number> }
   documents: number
   users: number
-  gateway: { providers: string[]; configured_primary: string }
+  gateway: { providers: string[]; configured_primary: string; daily_budget_usd: number; spent_today_usd: number }
 }

@@ -79,7 +79,7 @@ State lives in an S3 backend with DynamoDB locking (commented template in `versi
 
 ## 6. CI/CD (GitHub Actions)
 ```
-PR / push -> backend (ruff + 29 pytest) -> frontend (tsc + vitest + build) -> e2e (compose stack + Playwright)
+PR / push -> backend (ruff + 33 pytest) -> frontend (tsc + vitest + build) -> e2e (compose stack + Playwright)
           -> infra (terraform fmt/validate, kustomize build)
 main      -> images: build -> Trivy scan (fail on HIGH/CRITICAL) -> push to ECR (tag = git SHA)
           -> deploy (manual approval via GitHub environment): kustomize set image -> kubectl apply -> rollout status

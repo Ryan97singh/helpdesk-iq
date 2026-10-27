@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,10 +52,25 @@ class Settings(BaseSettings):
     llm_cache_ttl_seconds: int = 3600
     llm_max_context_chunks: int = 4
     rate_limit_per_minute: int = 30
+    llm_daily_budget_usd: float = 0.0               # 0 = no cap; when reached, the gateway serves the mock
+
+    # Public demo hardening
+    demo_mode: bool = False                         # block destructive actions (deleting documents)
+    demo_max_documents: int = 25
+    seed_on_startup: bool = False                   # idempotent demo data on boot (fresh hosted deploys)
 
     # Events: Redis Streams when redis_url is set (separate worker process), otherwise an
     # in-process background thread. events_sync=True runs handlers inline (tests).
     events_sync: bool = False
+
+    @field_validator("database_url")
+    @classmethod
+    def _sqlalchemy_driver(cls, url: str) -> str:
+        # Hosted Postgres (Neon, Render, Heroku) hands out postgres:// URLs; SQLAlchemy needs the driver.
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url[len(prefix):]
+        return url
 
     @property
     def cors_origin_list(self) -> list[str]:

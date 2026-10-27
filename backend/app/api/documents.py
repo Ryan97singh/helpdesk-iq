@@ -2,8 +2,9 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.core.security import CurrentUser, DbSession, require_roles
 from app.models import Document, Role, User
 from app.schemas import DocumentOut
@@ -31,6 +32,9 @@ def list_documents(_: CurrentUser, db: DbSession):
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_202_ACCEPTED)
 def upload_document(user: Editor, db: DbSession, file: UploadFile = File(...), title: str | None = Form(None)):
+    s = get_settings()
+    if s.demo_mode and (db.scalar(select(func.count(Document.id))) or 0) >= s.demo_max_documents:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "The public demo's knowledge base is full")
     filename = file.filename or "upload.txt"
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Only PDF, Markdown and text files are supported")
@@ -52,6 +56,8 @@ def upload_document(user: Editor, db: DbSession, file: UploadFile = File(...), t
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(document_id: int, _: Annotated[User, Depends(require_roles(Role.admin))], db: DbSession):
+    if get_settings().demo_mode:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Deleting documents is disabled in the public demo")
     doc = db.get(Document, document_id)
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")

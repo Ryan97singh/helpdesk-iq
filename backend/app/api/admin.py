@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.security import DbSession, require_roles
 from app.models import Document, LLMUsage, Role, Ticket, User
 from app.services.llm.factory import get_gateway
+from app.services.llm.gateway import db_spend_today
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 Admin = Annotated[User, Depends(require_roles(Role.admin))]
@@ -82,5 +83,7 @@ def stats(_: Admin, db: DbSession, days: Annotated[int, Query(ge=1, le=90)] = 7)
         "gateway": {
             "providers": [p.name for p in get_gateway().providers],
             "configured_primary": get_settings().llm_provider,
+            "daily_budget_usd": get_settings().llm_daily_budget_usd,
+            "spent_today_usd": round(db_spend_today(), 6),
         },
     }

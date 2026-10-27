@@ -23,6 +23,10 @@ logger = logging.getLogger("api")
 async def lifespan(_: FastAPI):
     setup_logging()
     init_db()  # demo convenience; production runs Alembic migrations as a pre-deploy job
+    if get_settings().seed_on_startup:
+        from app.seed import run as seed
+
+        seed()
     yield
 
 
