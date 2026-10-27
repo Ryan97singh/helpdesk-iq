@@ -1,5 +1,7 @@
 # HelpdeskIQ: AI Helpdesk Copilot
 
+**Live demo:** https://helpdesk-iq.vercel.app (log in with a demo account below; the first request after idle can take ~1 minute while the free-tier API wakes up)
+
 An internal IT & HR helpdesk where employees ask policy questions in chat (RAG over company documents, streamed answers with citations) and raise tickets that are **auto-categorised, prioritised and given a draft reply by AI**. Admins get a live view of **LLM cost, latency and cache hit rate**.
 
 Built to show production-style **GenAI integration** in a full-stack app: Python/FastAPI, React/TypeScript, PostgreSQL + pgvector, Redis, MongoDB, Docker, Kubernetes, Terraform (AWS) and GitHub Actions.
