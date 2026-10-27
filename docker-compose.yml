@@ -1,0 +1,85 @@
+# Full local stack mirroring production topology:
+#   web (nginx + React) -> api (FastAPI) -> postgres+pgvector / redis / mongo
+#   uploads on a shared volume locally; S3 on AWS (set S3_BUCKET, credentials via IAM role)
+#   worker consumes Redis Streams events (document ingestion, AI triage)
+#   prometheus + grafana for metrics
+# Usage: cp .env.example .env && docker compose up --build
+
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://helpdesk:helpdesk@postgres:5432/helpdesk
+    REDIS_URL: redis://redis:6379/0
+    MONGO_URL: mongodb://mongo:27017
+    STORAGE_DIR: /data/uploads
+    CORS_ORIGINS: http://localhost:8080
+    FRONTEND_URL: http://localhost:8080
+    GOOGLE_REDIRECT_URI: http://localhost:8080/api/auth/google/callback
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    mongo: { condition: service_started }
+  volumes: [uploads:/data/uploads]
+  restart: unless-stopped
+
+services:
+  web:
+    build: ./frontend
+    ports: ["8080:80"]
+    depends_on: [api]
+    restart: unless-stopped
+
+  api:
+    <<: *backend
+    ports: ["8000:8000"]
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.workers.main"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/metrics')"]
+      interval: 15s
+    deploy:
+      replicas: 2   # consumer group: events are shared, each processed once
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: helpdesk
+      POSTGRES_PASSWORD: helpdesk
+      POSTGRES_DB: helpdesk
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpdesk"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    volumes: [mongodata:/data/db]
+
+  prometheus:
+    image: prom/prometheus:v3.3.1
+    volumes: [./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    ports: ["3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes: [./infra/monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/ds.yml:ro]
+
+volumes:
+  pgdata:
+  mongodata:
+  uploads:

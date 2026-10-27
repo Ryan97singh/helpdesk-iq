@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: helpdesk-api
+    static_configs:
+      - targets: ["api:8000"]
+  - job_name: helpdesk-worker
+    static_configs:
+      - targets: ["worker:9100"]
+
+# Example alert rules (load via rule_files in production):
+#   - LLM error rate:  sum(rate(llm_requests_total{outcome="error"}[5m])) / sum(rate(llm_requests_total[5m])) > 0.05
+#   - LLM spend burn:  increase(llm_cost_usd_total[1h]) > 5
+#   - API p95 latency: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 1

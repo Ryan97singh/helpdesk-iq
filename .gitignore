@@ -1,0 +1,14 @@
+.env
+*.db
+uploads/
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+test-results/
+playwright-report/
+.terraform/
+*.tfstate*
+.DS_Store

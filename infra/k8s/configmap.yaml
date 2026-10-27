@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helpdesk-config
+  namespace: helpdesk-iq
+data:
+  ENVIRONMENT: production
+  LLM_PROVIDER: claude
+  LLM_FALLBACK_PROVIDERS: azure_openai,mock
+  CHAT_MODEL_CLAUDE: claude-sonnet-5-5
+  FAST_MODEL_CLAUDE: claude-haiku-5-5
+  S3_BUCKET: helpdesk-iq-docs-prod
+  AWS_DEFAULT_REGION: ap-south-1
+  CORS_ORIGINS: https://helpdesk.example.com
+  FRONTEND_URL: https://helpdesk.example.com
+  GOOGLE_REDIRECT_URI: https://helpdesk.example.com/api/auth/google/callback
+  RATE_LIMIT_PER_MINUTE: "30"

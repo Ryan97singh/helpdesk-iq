@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: helpdesk-iq
+  labels: { app: worker }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      serviceAccountName: helpdesk-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: worker
+          image: ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com/helpdesk-iq-api:GIT_SHA
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: { name: helpdesk-config }
+            - secretRef: { name: helpdesk-secrets }
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits: { cpu: "1", memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+# Scale on queue depth rather than CPU with KEDA (redis-streams scaler: pendingEntriesCount).

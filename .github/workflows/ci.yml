@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app tests
+      - run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose up -d --build --wait api web worker
+      - run: docker compose exec -T api python -m app.seed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          BASE_URL=http://localhost:8080 npx playwright test
+      - if: failure()
+        run: docker compose logs api worker
+
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - working-directory: infra/terraform/aws
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+      - run: kubectl kustomize infra/k8s > /dev/null
+
+  # Build, scan and push images on main. Deploy is a separate, approved step (environment protection).
+  images:
+    # Runs only once AWS is wired up (repo variable AWS_DEPLOY_ROLE_ARN set); skipped otherwise.
+    if: github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    needs: [e2e, infra]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # OIDC to AWS: no long-lived AWS keys stored in GitHub
+    strategy:
+      matrix:
+        service: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build
+        run: |
+          dir=$([ "${{ matrix.service }}" = api ] && echo backend || echo frontend)
+          docker build -t "${{ steps.ecr.outputs.registry }}/helpdesk-iq-${{ matrix.service }}:${{ github.sha }}" "$dir"
+      - name: Scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.ecr.outputs.registry }}/helpdesk-iq-${{ matrix.service }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - run: docker push ${{ steps.ecr.outputs.registry }}/helpdesk-iq-${{ matrix.service }}:${{ github.sha }}
+
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    environment: production   # requires manual approval in GitHub
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+      - run: aws eks update-kubeconfig --name helpdesk-iq-prod
+      - name: Rolling deploy
+        run: |
+          cd infra/k8s
+          kustomize edit set image \
+            "ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com/helpdesk-iq-api:GIT_SHA=${{ vars.ECR_REGISTRY }}/helpdesk-iq-api:${{ github.sha }}" \
+            "ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com/helpdesk-iq-web:GIT_SHA=${{ vars.ECR_REGISTRY }}/helpdesk-iq-web:${{ github.sha }}"
+          kubectl apply -k .
+          kubectl -n helpdesk-iq rollout status deploy/api --timeout=5m
+          kubectl -n helpdesk-iq rollout status deploy/worker --timeout=5m
